@@ -2,7 +2,6 @@
 
 A minimal, transparent system monitor widget for Windows. Displays network speed, CPU, RAM, and GPU stats in a floating overlay.
 
-![Widget Preview](icon.png)
 
 ## Features
 
