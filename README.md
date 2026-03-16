@@ -2,7 +2,7 @@
 
 A beautiful, transparent system monitor and clock widget for **Windows, Linux, and macOS**. Displays network speed, CPU, RAM, and GPU stats in a floating overlay, alongside an independent floating clock.
 
-![PerfMonitor Screenshot](icon.png)
+<img src="icon.png" alt="PerfMonitor" width="180" />
 
 ## Features
 
@@ -17,7 +17,7 @@ A beautiful, transparent system monitor and clock widget for **Windows, Linux, a
 - **Platform Adapter Architecture**: OS-specific fullscreen/transparency logic is split into dedicated backends.
 - **Real-time Stats**: High-accuracy monitoring for network, CPU, RAM, and NVIDIA GPU (via `nvidia-smi`).
 - **Persistence**: Remembers window positions and settings between sessions.
-- **System Tray**: Comprehensive tray menu for visibility and startup controls.
+- **System Tray (Windows)**: Tray menu for quick visibility and startup controls.
 
 ## Download
 
@@ -77,13 +77,13 @@ pip install -r requirements/macos.txt
 |--------|--------------|
 | **Drag** | Move either widget anywhere on your screen. |
 | **Right-click** | Access the focus menu (Toggle monitors, Clock settings, Startup, Hide, Exit). |
-| **Tray Icon** | Quick toggle visibility or manage OS startup. |
+| **Tray Icon (Windows)** | Quick toggle visibility or manage OS startup. |
 
 ## Tech Stack
 
 - **Python** + **Tkinter**: Core UI and cross-platform windows.
 - **psutil**: High-performance system and network metrics.
-- **pystray** + **Pillow**: System tray integration and icon rendering.
+- **pystray** + **Pillow**: Windows-only tray integration and icon rendering.
 - **nvidia-smi**: Reliable GPU utilization and temperature data.
 
 ## Requirements

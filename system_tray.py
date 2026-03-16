@@ -2,10 +2,17 @@
 
 import threading
 import os
+import sys
 from typing import Callable, Optional
-from PIL import Image
-import pystray
-from pystray import MenuItem as Item
+
+if sys.platform == "win32":
+    from PIL import Image
+    import pystray
+    from pystray import MenuItem as Item
+else:
+    Image = None
+    pystray = None
+    Item = None
 
 from settings_manager import SettingsManager
 
@@ -22,6 +29,7 @@ class SystemTray:
         self.on_show = on_show
         self.on_hide = on_hide
         self.on_exit = on_exit
+        self.enabled = sys.platform == "win32" and pystray is not None and Image is not None
         
         self._icon: Optional[pystray.Icon] = None
         self._visible = True
@@ -29,6 +37,9 @@ class SystemTray:
     
     def _load_icon(self) -> Image.Image:
         """Try to load icon.png, fall back to generated icon."""
+        if not self.enabled or Image is None:
+            raise RuntimeError("System tray is only enabled on Windows builds")
+
         app_dir = os.path.dirname(os.path.abspath(__file__))
         icon_path = os.path.join(app_dir, "icon.png")
         
@@ -44,6 +55,9 @@ class SystemTray:
     
     def _make_fallback_icon(self) -> Image.Image:
         """Simple icon if icon.png is missing."""
+        if Image is None:
+            raise RuntimeError("System tray image backend is unavailable")
+
         from PIL import ImageDraw
         
         size = 64
@@ -83,6 +97,9 @@ class SystemTray:
     
     def start(self):
         """Start the tray icon in a background thread."""
+        if not self.enabled or pystray is None or Item is None:
+            return
+
         menu = pystray.Menu(
             Item(self._get_visibility_text, self._toggle_visibility, default=True),
             Item("Start with OS", self._toggle_startup, checked=self._is_startup_enabled),
@@ -101,7 +118,7 @@ class SystemTray:
         self._thread.start()
     
     def stop(self):
-        if self._icon:
+        if self.enabled and self._icon:
             self._icon.stop()
     
     def set_visible(self, visible: bool):

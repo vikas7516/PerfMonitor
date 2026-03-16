@@ -36,6 +36,7 @@ class PerfMonitor:
 
         self._visible = True
         self._hidden_fullscreen = False
+        self._supports_tray = sys.platform == "win32"
 
         # Initialize UI variables for linter/safety
         self.root: tk.Tk = None # type: ignore
@@ -100,7 +101,7 @@ class PerfMonitor:
         self._last_y = self.settings.get("window_y", 100)
 
         self._start_loops()
-        self.root.protocol("WM_DELETE_WINDOW", self._hide)
+        self.root.protocol("WM_DELETE_WINDOW", self._hide if self._supports_tray else self._exit)
 
     # ─────────────────────────────── transparency ──────────────────────────────
 
@@ -312,8 +313,9 @@ class PerfMonitor:
         self.menu.add_separator()
 
         # ── Hide / Exit ───────────────────────────────────────────────────────
-        self.menu.add_command(label="Hide", command=self._hide)
-        self.menu.add_separator()
+        if self._supports_tray:
+            self.menu.add_command(label="Hide", command=self._hide)
+            self.menu.add_separator()
         self.menu.add_command(label="Exit", command=self._exit)
 
         def show(e):
@@ -516,9 +518,14 @@ class PerfMonitor:
         self._visible = True
         if not self._hidden_fullscreen:
             self.root.deiconify()
-        self.tray.set_visible(True)
+        if self._supports_tray:
+            self.tray.set_visible(True)
 
     def _hide(self):
+        if not self._supports_tray:
+            self._exit()
+            return
+
         self._save_position()
         self._visible = False
         self.root.withdraw()
@@ -534,7 +541,8 @@ class PerfMonitor:
         self.root.destroy()
 
     def run(self):
-        self.tray.start()
+        if self._supports_tray:
+            self.tray.start()
         self.root.mainloop()
 
 
