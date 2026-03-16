@@ -1,27 +1,37 @@
-import importlib
+import ctypes
 
 
 class WindowsFullscreenBackend:
     """Windows fullscreen detection using foreground window bounds."""
 
     def __init__(self):
-        import ctypes
-
         self._user32 = ctypes.windll.user32
+
+        class RECT(ctypes.Structure):
+            _fields_ = [
+                ("left", ctypes.c_long),
+                ("top", ctypes.c_long),
+                ("right", ctypes.c_long),
+                ("bottom", ctypes.c_long),
+            ]
+
+        self._rect_type = RECT
+        self._user32.GetForegroundWindow.restype = ctypes.c_void_p
+        self._user32.GetWindowRect.argtypes = [ctypes.c_void_p, ctypes.POINTER(RECT)]
+        self._user32.GetWindowRect.restype = ctypes.c_int
 
     def _get_foreground_window_info(self):
         try:
-            win32gui = importlib.import_module("win32gui")
-            win32process = importlib.import_module("win32process")
-
-            hwnd = win32gui.GetForegroundWindow()
+            hwnd = self._user32.GetForegroundWindow()
             if not hwnd:
                 return None, None
 
-            rect = win32gui.GetWindowRect(hwnd)
-            _, _ = win32process.GetWindowThreadProcessId(hwnd)
+            rect = self._rect_type()
+            ok = self._user32.GetWindowRect(hwnd, ctypes.byref(rect))
+            if not ok:
+                return None, None
 
-            return hwnd, rect
+            return hwnd, (rect.left, rect.top, rect.right, rect.bottom)
         except Exception:
             return None, None
 

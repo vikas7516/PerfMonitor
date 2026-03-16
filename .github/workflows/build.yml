@@ -41,11 +41,17 @@ jobs:
         
     - name: Build with PyInstaller
       run: |
-        pyinstaller --noconfirm --clean --onefile --windowed \
+        pyinstaller --noconfirm --clean --onefile --windowed --strip --optimize 2 \
           --name PerfMonitor \
           --hidden-import PySide6.QtCore \
           --hidden-import PySide6.QtGui \
           --hidden-import PySide6.QtWidgets \
+          --exclude-module tkinter \
+          --exclude-module _tkinter \
+          --exclude-module pystray \
+          --exclude-module PIL \
+          --exclude-module win32gui \
+          --exclude-module win32process \
           --exclude-module PySide6.QtQml \
           --exclude-module PySide6.QtQuick \
           --exclude-module PySide6.QtWebEngineCore \
@@ -54,6 +60,13 @@ jobs:
           --exclude-module PySide6.Qt3DCore \
           --exclude-module PySide6.QtPdf \
           --exclude-module PySide6.QtMultimedia \
+          --exclude-module PySide6.QtBluetooth \
+          --exclude-module PySide6.QtNfc \
+          --exclude-module PySide6.QtSql \
+          --exclude-module PySide6.QtTest \
+          --exclude-module PySide6.QtHelp \
+          --exclude-module PySide6.QtSvg \
+          --exclude-module PySide6.QtHttpServer \
           "main.py"
       shell: bash
 
