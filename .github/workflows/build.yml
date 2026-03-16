@@ -18,15 +18,12 @@ jobs:
           - os: ubuntu-latest
             requirements_file: requirements/linux.txt
             artifact_name: PerfMonitor-linux
-            data_sep: ":"
           - os: windows-latest
             requirements_file: requirements/windows.txt
             artifact_name: PerfMonitor-windows
-            data_sep: ";"
           - os: macos-latest
             requirements_file: requirements/macos.txt
             artifact_name: PerfMonitor-macos
-            data_sep: ":"
         
     steps:
     - uses: actions/checkout@v4
@@ -44,14 +41,14 @@ jobs:
         
     - name: Build with PyInstaller
       run: |
-         pyinstaller --noconfirm --clean --onedir --windowed --name PerfMonitor --add-data "icon.png${{ matrix.data_sep }}." "main.py"
+        pyinstaller --noconfirm --clean --onefile --windowed --collect-all PySide6 --name PerfMonitor "main.py"
       shell: bash
 
     - name: Upload Artifact
       uses: actions/upload-artifact@v4
       with:
         name: ${{ matrix.artifact_name }}
-        path: dist/PerfMonitor/
+        path: dist/PerfMonitor*
 
   release:
     name: Publish GitHub Release

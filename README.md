@@ -14,10 +14,10 @@ A beautiful, transparent system monitor and clock widget for **Windows, Linux, a
   - Toggle between **12-hour and 24-hour** formats.
   - Clear date layout with **bold day** + separator (`|`) + date.
 - **Smart Hiding**: Both widgets automatically hide when *any* application enters fullscreen mode and reappear when you're done.
-- **Platform Adapter Architecture**: OS-specific fullscreen/transparency logic is split into dedicated backends.
+- **Native-Style Transparent UI**: Powered by Qt (`PySide6`) with frameless translucent windows.
+- **Platform Adapter Architecture**: OS-specific fullscreen logic is split into dedicated backends.
 - **Real-time Stats**: High-accuracy monitoring for network, CPU, RAM, and NVIDIA GPU (via `nvidia-smi`).
 - **Persistence**: Remembers window positions and settings between sessions.
-- **System Tray (Windows)**: Tray menu for quick visibility and startup controls.
 
 ## Download
 
@@ -45,7 +45,7 @@ pip install -r requirements/linux.txt
 pip install -r requirements/macos.txt
 ```
 
-*Note for Linux users: You may need to install `python3-tk` via your package manager (e.g., `sudo apt-get install python3-tk`).*
+*Note for Linux users: You may need Qt runtime dependencies provided by your distro (for example common XCB/Wayland Qt libraries).*
 
 ## Linux Fullscreen + Transparency Notes
 
@@ -58,17 +58,14 @@ pip install -r requirements/macos.txt
   - If no compositor-specific tool is available, fullscreen auto-hide may be limited by the desktop environment.
 
 - **Transparency behavior**:
-  - Windows/macOS support stronger native transparency controls in Tk.
-  - On Linux, Tk transparency depends on compositor + backend support.
-  - PerfMonitor attempts transparent-color mode first, then falls back to semi-transparent dark background when unsupported.
-  - Fully forcing "no background at all" is not guaranteed on all Linux environments with Tkinter.
+  - UI uses Qt translucent windows (PySide6) for better cross-platform transparency behavior.
+  - Final visual behavior still depends on compositor/window manager settings, especially on Linux Wayland.
 
 ## Architecture
 
 - Shared app logic remains in core modules (`main.py`, monitors, settings).
 - Platform backends are isolated under `platform_backends/`:
   - `platform_backends/fullscreen/` for fullscreen detection per OS/session
-  - `platform_backends/transparency.py` for window transparency behavior
 - `fullscreen_detector.py` is a stable compatibility wrapper that delegates to the active backend.
 
 ## Usage
@@ -76,14 +73,12 @@ pip install -r requirements/macos.txt
 | Action | What it does |
 |--------|--------------|
 | **Drag** | Move either widget anywhere on your screen. |
-| **Right-click** | Access the focus menu (Toggle monitors, Clock settings, Startup, Hide, Exit). |
-| **Tray Icon (Windows)** | Quick toggle visibility or manage OS startup. |
+| **Right-click** | Access the context menu (toggles, clock settings, startup, exit). |
 
 ## Tech Stack
 
-- **Python** + **Tkinter**: Core UI and cross-platform windows.
+- **Python** + **PySide6 (Qt)**: Core UI and transparent floating windows.
 - **psutil**: High-performance system and network metrics.
-- **pystray** + **Pillow**: Windows-only tray integration and icon rendering.
 - **nvidia-smi**: Reliable GPU utilization and temperature data.
 
 ## Requirements
@@ -104,6 +99,7 @@ pip install -r requirements/macos.txt
   - `requirements/windows.txt`
   - `requirements/linux.txt`
   - `requirements/macos.txt`
+- Builds are generated as **single-file binaries** (`--onefile`) so no `_internal` folder is required.
 - Pushing a tag like `v1.2.0` automatically publishes release archives for all OS artifacts.
 - Output artifact names:
   - `PerfMonitor-windows`
