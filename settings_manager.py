@@ -19,6 +19,15 @@ class SettingsManager:
     DEFAULT_SETTINGS = {
         "window_x": 100,
         "window_y": 100,
+        "show_network": True,
+        "show_cpu": True,
+        "show_ram": True,
+        "show_gpu": True,
+        "show_time": True,
+        "time_fmt": "12h",
+        "time_offset": 0.0,
+        "time_x": 100,
+        "time_y": 200,
     }
     
     def __init__(self):
