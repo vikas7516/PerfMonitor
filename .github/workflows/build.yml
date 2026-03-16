@@ -41,7 +41,20 @@ jobs:
         
     - name: Build with PyInstaller
       run: |
-        pyinstaller --noconfirm --clean --onefile --windowed --collect-all PySide6 --name PerfMonitor "main.py"
+        pyinstaller --noconfirm --clean --onefile --windowed \
+          --name PerfMonitor \
+          --hidden-import PySide6.QtCore \
+          --hidden-import PySide6.QtGui \
+          --hidden-import PySide6.QtWidgets \
+          --exclude-module PySide6.QtQml \
+          --exclude-module PySide6.QtQuick \
+          --exclude-module PySide6.QtWebEngineCore \
+          --exclude-module PySide6.QtWebEngineWidgets \
+          --exclude-module PySide6.QtWebChannel \
+          --exclude-module PySide6.Qt3DCore \
+          --exclude-module PySide6.QtPdf \
+          --exclude-module PySide6.QtMultimedia \
+          "main.py"
       shell: bash
 
     - name: Upload Artifact
