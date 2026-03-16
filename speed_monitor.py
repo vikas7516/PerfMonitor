@@ -26,6 +26,8 @@ class SpeedMonitor:
     
     def _format_speed(self, bytes_per_sec: float) -> tuple[str, str]:
         """Pick the right unit - B/s, KB/s, or MB/s."""
+        if bytes_per_sec <= 0:
+            return "0.0", "KB/s"
         if bytes_per_sec < 1024:
             return f"{bytes_per_sec:.0f}", "B/s"
         elif bytes_per_sec < 1024 * 1024:
@@ -49,8 +51,12 @@ class SpeedMonitor:
         # Calculate speed from the difference
         elapsed = max(now - self._last_time, 0.1)
         
-        download = (counters.bytes_recv - self._last_bytes_recv) / elapsed
-        upload = (counters.bytes_sent - self._last_bytes_sent) / elapsed
+        recv_delta = counters.bytes_recv - self._last_bytes_recv
+        sent_delta = counters.bytes_sent - self._last_bytes_sent
+
+        # Interface resets/rollovers can produce negative deltas; clamp to 0.
+        download = max(recv_delta / elapsed, 0.0)
+        upload = max(sent_delta / elapsed, 0.0)
         
         self._last_bytes_sent = counters.bytes_sent
         self._last_bytes_recv = counters.bytes_recv

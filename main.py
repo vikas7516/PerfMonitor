@@ -13,15 +13,16 @@ from fullscreen_detector import FullscreenDetector
 from settings_manager import SettingsManager
 from system_tray import SystemTray
 from time_widget import TimeWidget
+from platform_backends.transparency import apply_tk_transparency
 
 
 class PerfMonitor:
     """The main stats widget window."""
 
-    UPDATE_MS = 500
-    FULLSCREEN_CHECK_MS = 2000
+    UPDATE_MS = 700
+    FULLSCREEN_CHECK_MS = 1000
     POSITION_SAVE_MS = 5000
-    TOPMOST_MS = 500
+    TOPMOST_MS = 3500
 
     TRANSPARENT = "#010101"
 
@@ -36,15 +37,52 @@ class PerfMonitor:
         self._visible = True
         self._hidden_fullscreen = False
 
+        # Initialize UI variables for linter/safety
+        self.root: tk.Tk = None # type: ignore
+        self.frame: tk.Frame = None # type: ignore
+        self.row1: tk.Frame = None # type: ignore
+        self.row2: tk.Frame = None # type: ignore
+        self.dl_arrow: tk.Label = None # type: ignore
+        self.dl_speed: tk.Label = None # type: ignore
+        self.ul_arrow: tk.Label = None # type: ignore
+        self.ul_speed: tk.Label = None # type: ignore
+        self.cpu_lbl: tk.Label = None # type: ignore
+        self.cpu_val: tk.Label = None # type: ignore
+        self.ram_lbl: tk.Label = None # type: ignore
+        self.ram_val: tk.Label = None # type: ignore
+        self.gpu_lbl: tk.Label = None # type: ignore
+        self.gpu_val: tk.Label = None # type: ignore
+        self.gpu_temp: tk.Label = None # type: ignore
+        self.menu: tk.Menu = None # type: ignore
+        self._startup_var: tk.BooleanVar = None # type: ignore
+        self._show_net_var: tk.BooleanVar = None # type: ignore
+        self._show_cpu_var: tk.BooleanVar = None # type: ignore
+        self._show_ram_var: tk.BooleanVar = None # type: ignore
+        self._show_gpu_var: tk.BooleanVar = None # type: ignore
+        self._show_time_var: tk.BooleanVar = None # type: ignore
+        self._time_fmt_var: tk.StringVar = None # type: ignore
+        self._drag_x: int = 0
+        self._drag_y: int = 0
+        self._dragging: bool = False
+        self._effective_bg: str = self.TRANSPARENT
+        self._last_dl_text = ""
+        self._last_ul_text = ""
+        self._last_cpu_text = ""
+        self._last_ram_text = ""
+        self._last_gpu_text = ""
+        self._last_gpu_temp_text = ""
+
         self.root = tk.Tk()
         self.root.title("PerfMonitor")
         self.root.overrideredirect(True)
 
+        self._last_x = self.settings.get("window_x", 100)
+        self._last_y = self.settings.get("window_y", 100)
+
         self._setup_transparency()
         self._create_ui()
-        self._refresh_layout()       # initial pack based on settings
-        self._setup_drag()
-        self._setup_menu()
+        self._refresh_layout()
+        self._setup_bindings()
         self._load_position()
 
         # Create independent time widget
@@ -67,23 +105,11 @@ class PerfMonitor:
     # ─────────────────────────────── transparency ──────────────────────────────
 
     def _setup_transparency(self):
-        if sys.platform == "win32":
-            self.root.configure(bg=self.TRANSPARENT)
-            self.root.attributes("-transparentcolor", self.TRANSPARENT)
-        elif sys.platform == "darwin":
-            self.root.configure(bg=self.TRANSPARENT)
-            self.root.attributes("-transparent", True)
-        else:  # Linux
-            self.root.configure(bg="#222222")
-            self.root.attributes("-type", "dock")
-            self.root.wait_visibility(self.root)
-            self.root.attributes("-alpha", 0.8)
-
-        self.root.attributes("-topmost", True)
+        self._effective_bg = apply_tk_transparency(self.root, self.TRANSPARENT)
 
     @property
     def _bg(self):
-        return self.TRANSPARENT if sys.platform != "linux" else "#222222"
+        return self._effective_bg
 
     # ─────────────────────────────── UI creation ───────────────────────────────
 
@@ -179,38 +205,43 @@ class PerfMonitor:
             self.gpu_lbl, self.gpu_val, self.gpu_temp,
         ]
 
-    def _setup_drag(self):
+    def _setup_bindings(self):
+        """Setup all mouse bindings (drag and right-click) for all widgets."""
         self._drag_x = 0
         self._drag_y = 0
         self._dragging = False
 
-        def start(e):
+        self.menu = tk.Menu(self.root, tearoff=0)
+        self._init_menu()
+
+        def start_drag(e):
             self._drag_x = e.x
             self._drag_y = e.y
             self._dragging = True
 
-        def move(e):
+        def do_drag(e):
             if self._dragging:
                 x = self.root.winfo_x() + e.x - self._drag_x
                 y = self.root.winfo_y() + e.y - self._drag_y
                 self.root.geometry(f"+{x}+{y}")
 
-        def stop(e):
-            if self._dragging:
-                self._dragging = False
-                self._save_position()
+        def stop_drag(e):
+            self._dragging = False
+            self._save_position()
+
+        def show_menu(e):
+            self._startup_var.set(SettingsManager.is_in_startup())
+            self.menu.tk_popup(e.x_root, e.y_root)
 
         for w in self._all_widgets():
-            w.bind("<Button-1>", start)
-            w.bind("<B1-Motion>", move)
-            w.bind("<ButtonRelease-1>", stop)
+            if not w: continue
+            w.bind("<Button-1>", start_drag)
+            w.bind("<B1-Motion>", do_drag)
+            w.bind("<ButtonRelease-1>", stop_drag)
+            w.bind("<Button-3>", show_menu)
 
-    # ─────────────────────────────── right-click menu ──────────────────────────
-
-    def _setup_menu(self):
-        """Right-click context menu with toggles and settings."""
-        self.menu = tk.Menu(self.root, tearoff=0)
-
+    def _init_menu(self):
+        """Build the right-click menu structure."""
         # ── Startup ───────────────────────────────────────────────────────────
         self._startup_var = tk.BooleanVar(value=SettingsManager.is_in_startup())
         self.menu.add_checkbutton(
@@ -303,20 +334,8 @@ class PerfMonitor:
     def _toggle_monitor(self, key: str, var: tk.BooleanVar):
         self.settings.set(key, var.get())
         self._refresh_layout()
-        # Re-bind drag/menu to any newly packed widgets
-        self._setup_drag()
-        self._setup_menu_bindings()
-
-    def _setup_menu_bindings(self):
-        """Re-bind right-click to all widgets after layout refresh."""
-        def show(e):
-            self._startup_var.set(SettingsManager.is_in_startup())
-            self.menu.tk_popup(e.x_root, e.y_root)
-        for w in self._all_widgets():
-            try:
-                w.bind("<Button-3>", show)
-            except tk.TclError:
-                pass
+        # Ensure new layout widgets have bindings (though they should persist)
+        self._setup_bindings()
 
     def _toggle_time_widget(self):
         show = self._show_time_var.get()
@@ -411,44 +430,52 @@ class PerfMonitor:
 
     def _auto_save(self):
         self._save_position()
-        self.root.after(self.POSITION_SAVE_MS, self._auto_save)
+        self.root.after(self.POSITION_SAVE_MS, self._auto_save) # type: ignore
 
     # ─────────────────────────────── keep on top ───────────────────────────────
 
     def _keep_on_top(self):
         if self._visible and not self._hidden_fullscreen:
             try:
-                self.root.attributes("-topmost", False)
                 self.root.attributes("-topmost", True)
                 self.root.lift()
             except tk.TclError:
                 return
-        self.root.after(self.TOPMOST_MS, self._keep_on_top)
+        self.root.after(self.TOPMOST_MS, self._keep_on_top) # type: ignore
+
+    def _set_label_text(self, label: tk.Label, value: str, cache_attr: str):
+        """Only update Tk label text when value changed to reduce UI churn."""
+        if getattr(self, cache_attr) != value:
+            label.config(text=value)
+            setattr(self, cache_attr, value)
 
     # ─────────────────────────────── update loop ───────────────────────────────
 
     def _update(self):
         if not self._visible or self._hidden_fullscreen:
-            self.root.after(self.UPDATE_MS, self._update)
+            self.root.after(self.UPDATE_MS, self._update) # type: ignore
             return
 
         try:
             if self.settings.get("show_network", True):
                 s = self.speed.get_speed()
-                self.dl_speed.config(text=f"{s.download_display} {s.download_unit}")
-                self.ul_speed.config(text=f"{s.upload_display} {s.upload_unit}")
+                dl_text = f"{s.download_display} {s.download_unit}"
+                ul_text = f"{s.upload_display} {s.upload_unit}"
+                self._set_label_text(self.dl_speed, dl_text, "_last_dl_text")
+                self._set_label_text(self.ul_speed, ul_text, "_last_ul_text")
 
             st = self.system.get_stats()
 
             if self.settings.get("show_cpu", True):
-                self.cpu_val.config(text=st.cpu_display)
+                self._set_label_text(self.cpu_val, st.cpu_display, "_last_cpu_text")
 
             if self.settings.get("show_ram", True):
-                self.ram_val.config(text=st.ram_display)
+                self._set_label_text(self.ram_val, st.ram_display, "_last_ram_text")
 
             if self.settings.get("show_gpu", True):
-                self.gpu_val.config(text=st.gpu_display)
-                self.gpu_temp.config(text=st.gpu_temp_display if st.gpu_temp else "")
+                gpu_temp_text = st.gpu_temp_display if st.gpu_temp is not None else ""
+                self._set_label_text(self.gpu_val, st.gpu_display, "_last_gpu_text")
+                self._set_label_text(self.gpu_temp, gpu_temp_text, "_last_gpu_temp_text")
         except tk.TclError:
             pass
 
@@ -475,7 +502,7 @@ class PerfMonitor:
         except Exception:
             pass
 
-        self.root.after(self.FULLSCREEN_CHECK_MS, self._check_fullscreen)
+        self.root.after(self.FULLSCREEN_CHECK_MS, self._check_fullscreen) # type: ignore
 
     # ─────────────────────────────── lifecycle ─────────────────────────────────
 
@@ -487,7 +514,8 @@ class PerfMonitor:
 
     def _show(self):
         self._visible = True
-        self.root.deiconify()
+        if not self._hidden_fullscreen:
+            self.root.deiconify()
         self.tray.set_visible(True)
 
     def _hide(self):
@@ -499,6 +527,8 @@ class PerfMonitor:
     def _exit(self):
         self._save_position()
         self.tray.stop()
+        self.fullscreen.stop()
+        self.system.close()
         self.time_widget.destroy()
         self.root.quit()
         self.root.destroy()

@@ -85,7 +85,7 @@ class SystemTray:
         """Start the tray icon in a background thread."""
         menu = pystray.Menu(
             Item(self._get_visibility_text, self._toggle_visibility, default=True),
-            Item("Start with Windows", self._toggle_startup, checked=self._is_startup_enabled),
+            Item("Start with OS", self._toggle_startup, checked=self._is_startup_enabled),
             pystray.Menu.SEPARATOR,
             Item("Exit", self._on_exit)
         )

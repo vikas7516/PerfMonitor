@@ -2,16 +2,16 @@
 # Always on top, draggable, configurable timezone and format
 
 import tkinter as tk
-import sys
-import time
 import datetime
+
+from platform_backends.transparency import apply_tk_transparency
 
 
 class TimeWidget:
     """A standalone draggable floating clock/date widget."""
 
     TIME_REFRESH_MS = 1000
-    TOPMOST_MS = 500
+    TOPMOST_MS = 3500
 
     TRANSPARENT = "#010101"
 
@@ -25,6 +25,24 @@ class TimeWidget:
 
         self._visible = True
         self._hidden_fullscreen = False
+
+        # Initialize UI variables
+        self.win: tk.Toplevel = None # type: ignore
+        self.frame: tk.Frame = None # type: ignore
+        self.time_lbl: tk.Label = None # type: ignore
+        self.date_row: tk.Frame = None # type: ignore
+        self.day_lbl: tk.Label = None # type: ignore
+        self.sep_lbl: tk.Label = None # type: ignore
+        self.full_date_lbl: tk.Label = None # type: ignore
+        self._last_x = 0
+        self._last_y = 0
+        self._drag_x = 0
+        self._drag_y = 0
+        self._dragging = False
+        self._effective_bg = self.TRANSPARENT
+        self._last_time_text = ""
+        self._last_day_text = ""
+        self._last_date_text = ""
 
         # Separate Toplevel window
         self.win = tk.Toplevel(root)
@@ -40,42 +58,48 @@ class TimeWidget:
     # ─────────────────────────────── transparency ──────────────────────────────
 
     def _setup_transparency(self):
-        if sys.platform == "win32":
-            self.win.configure(bg=self.TRANSPARENT)
-            self.win.attributes("-transparentcolor", self.TRANSPARENT)
-        elif sys.platform == "darwin":
-            self.win.configure(bg=self.TRANSPARENT)
-            self.win.attributes("-transparent", True)
-        else:  # Linux
-            self.win.configure(bg="#222222")
-            self.win.attributes("-type", "dock")
-            self.win.wait_visibility(self.win)
-            self.win.attributes("-alpha", 0.8)
-
-        self.win.attributes("-topmost", True)
+        self._effective_bg = apply_tk_transparency(self.win, self.TRANSPARENT)
 
     # ─────────────────────────────── UI ────────────────────────────────────────
 
     def _create_ui(self):
-        bg = self.TRANSPARENT if sys.platform != "linux" else "#222222"
+        bg = self._effective_bg
 
         self.frame = tk.Frame(self.win, bg=bg)
         self.frame.pack(fill=tk.BOTH, expand=True)
 
         self.time_lbl = tk.Label(
             self.frame, text="--:-- --",
-            font=("Arial", 13, "bold"), fg="#FFE066", bg=bg
+            font=("Arial", 13, "bold"), fg="#FFFFFF", bg=bg
         )
         self.time_lbl.pack(side=tk.TOP, padx=6, pady=(2, 0))
 
-        self.date_lbl = tk.Label(
-            self.frame, text="--- --, ----",
+        self.date_row = tk.Frame(self.frame, bg=bg)
+        self.date_row.pack(side=tk.TOP, padx=6, pady=(0, 2))
+
+        self.day_lbl = tk.Label(
+            self.date_row, text="---",
+            font=("Arial", 9, "bold"), fg="#FFFFFF", bg=bg
+        )
+        self.day_lbl.pack(side=tk.LEFT)
+
+        self.sep_lbl = tk.Label(
+            self.date_row, text=" | ",
             font=("Arial", 9), fg="#CCCCCC", bg=bg
         )
-        self.date_lbl.pack(side=tk.TOP, padx=6, pady=(0, 2))
+        self.sep_lbl.pack(side=tk.LEFT)
+
+        self.full_date_lbl = tk.Label(
+            self.date_row, text="--- --, ----",
+            font=("Arial", 9), fg="#CCCCCC", bg=bg
+        )
+        self.full_date_lbl.pack(side=tk.LEFT)
 
     def _all_widgets(self):
-        return [self.win, self.frame, self.time_lbl, self.date_lbl]
+        return [
+            self.win, self.frame, self.time_lbl,
+            self.date_row, self.day_lbl, self.sep_lbl, self.full_date_lbl
+        ]
 
     # ─────────────────────────────── drag ──────────────────────────────────────
 
@@ -137,7 +161,8 @@ class TimeWidget:
     def _get_current_time(self):
         """Get the current time with applied GMT offset."""
         offset_hours = self.settings.get("time_offset", 0.0)
-        utc_now = datetime.datetime.utcnow()
+        # Use timezone-aware UTC now for modern Python compatibility
+        utc_now = datetime.datetime.now(datetime.timezone.utc)
         local_now = utc_now + datetime.timedelta(hours=offset_hours)
         return local_now
 
@@ -151,20 +176,29 @@ class TimeWidget:
             else:
                 time_str = now.strftime("%H:%M:%S")
 
-            date_str = now.strftime("%a %b %d, %Y")
+            day_str = now.strftime("%a")
+            date_str = now.strftime("%b %d, %Y")
 
             try:
-                self.time_lbl.config(text=time_str)
-                self.date_lbl.config(text=date_str)
+                if self._last_time_text != time_str:
+                    self.time_lbl.config(text=time_str)
+                    self._last_time_text = time_str
+
+                if self._last_day_text != day_str:
+                    self.day_lbl.config(text=day_str)
+                    self._last_day_text = day_str
+
+                if self._last_date_text != date_str:
+                    self.full_date_lbl.config(text=date_str)
+                    self._last_date_text = date_str
             except tk.TclError:
                 return
 
-        self.win.after(self.TIME_REFRESH_MS, self._update_clock)
+        self.win.after(self.TIME_REFRESH_MS, self._update_clock) # type: ignore
 
     def _keep_on_top(self):
         if self._visible and not self._hidden_fullscreen:
             try:
-                self.win.attributes("-topmost", False)
                 self.win.attributes("-topmost", True)
                 self.win.lift()
             except tk.TclError:
@@ -179,6 +213,9 @@ class TimeWidget:
 
     def show(self):
         self._visible = True
+        if self._hidden_fullscreen:
+            return
+
         try:
             self.win.deiconify()
         except tk.TclError:

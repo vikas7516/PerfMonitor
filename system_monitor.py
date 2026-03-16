@@ -4,8 +4,8 @@ import psutil
 from dataclasses import dataclass
 from typing import Optional
 import subprocess
-import time
 import sys
+import threading
 
 # Windows-only flag for subprocess to hide the console window
 if sys.platform == "win32":
@@ -30,15 +30,21 @@ class SystemMonitor:
     """Tracks CPU, RAM, and GPU usage."""
     
     # Don't spam nvidia-smi too often
-    GPU_CACHE_SECONDS = 0.8
+    GPU_CACHE_SECONDS = 2.0
     
     def __init__(self):
         self._gpu_available = self._check_nvidia()
         self._gpu_cache = (None, None)
-        self._gpu_cache_time = 0
+        self._gpu_lock = threading.Lock()
+        self._gpu_stop = threading.Event()
+        self._gpu_thread = None
         
         # First cpu_percent call is always 0, so we throw it away
         psutil.cpu_percent(interval=None)
+
+        if self._gpu_available:
+            self._gpu_thread = threading.Thread(target=self._gpu_poll_loop, daemon=True)
+            self._gpu_thread.start()
     
     def _check_nvidia(self) -> bool:
         """See if nvidia-smi is available."""
@@ -52,14 +58,10 @@ class SystemMonitor:
         except (FileNotFoundError, subprocess.TimeoutExpired, OSError):
             return False
     
-    def _get_gpu_stats(self) -> tuple[Optional[float], Optional[float]]:
-        """Query nvidia-smi for GPU usage and temp. Uses cache to avoid lag."""
+    def _query_gpu_stats(self) -> tuple[Optional[float], Optional[float]]:
+        """Query nvidia-smi for GPU usage and temp."""
         if not self._gpu_available:
             return None, None
-        
-        now = time.time()
-        if now - self._gpu_cache_time < self.GPU_CACHE_SECONDS:
-            return self._gpu_cache
         
         try:
             result = subprocess.run(
@@ -72,14 +74,27 @@ class SystemMonitor:
                 if len(parts) >= 2:
                     usage = float(parts[0].strip())
                     temp = float(parts[1].strip())
-                    self._gpu_cache = (usage, temp)
-                    self._gpu_cache_time = now
                     return usage, temp
         except (FileNotFoundError, subprocess.TimeoutExpired, ValueError, OSError):
             pass
-        
-        # Return old cache if query failed
-        return self._gpu_cache if self._gpu_cache[0] is not None else (None, None)
+
+        return None, None
+
+    def _gpu_poll_loop(self):
+        while not self._gpu_stop.is_set():
+            usage, temp = self._query_gpu_stats()
+            if usage is not None:
+                with self._gpu_lock:
+                    self._gpu_cache = (usage, temp)
+            self._gpu_stop.wait(self.GPU_CACHE_SECONDS)
+
+    def _get_gpu_stats(self) -> tuple[Optional[float], Optional[float]]:
+        """Get cached GPU stats without blocking UI."""
+        if not self._gpu_available:
+            return None, None
+
+        with self._gpu_lock:
+            return self._gpu_cache
     
     def get_stats(self) -> SystemStats:
         """Get all system stats in one call."""
@@ -97,3 +112,6 @@ class SystemMonitor:
             gpu_display=f"{gpu_usage:.0f}%" if gpu_usage is not None else "N/A",
             gpu_temp_display=f"{gpu_temp:.0f}°C" if gpu_temp is not None else ""
         )
+
+    def close(self):
+        self._gpu_stop.set()
