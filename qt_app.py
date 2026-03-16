@@ -18,6 +18,7 @@ QLabel = QtWidgets.QLabel
 QMenu = QtWidgets.QMenu
 QVBoxLayout = QtWidgets.QVBoxLayout
 QWidget = QtWidgets.QWidget
+QCursor = QtGui.QCursor
 
 from fullscreen_detector import FullscreenDetector
 from settings_manager import SettingsManager
@@ -34,6 +35,8 @@ class ClockWindow(QWidget):
         self._visible = True
         self._hidden_fullscreen = False
         self._drag_offset: Optional[QPoint] = None
+        self._is_resizing = False
+        self._resize_edge = 0  # 1: right, 2: bottom, 3: bottom-right
 
         self._last_time = ""
         self._last_day = ""
@@ -41,7 +44,7 @@ class ClockWindow(QWidget):
 
         self._init_window()
         self._init_ui()
-        self._load_position()
+        self._load_geometry()
 
         self._clock_timer = QTimer(self)
         self._clock_timer.timeout.connect(self.update_clock)
@@ -57,6 +60,7 @@ class ClockWindow(QWidget):
             Qt.FramelessWindowHint | Qt.Tool | Qt.WindowStaysOnTopHint
         )
         self.setAttribute(Qt.WA_TranslucentBackground, True)
+        self.setMouseTracking(True)
 
     def _init_ui(self):
         layout = QVBoxLayout()
@@ -88,18 +92,22 @@ class ClockWindow(QWidget):
 
         self.setLayout(layout)
 
-    def _load_position(self):
+    def _load_geometry(self):
         x = int(self.settings.get("time_x", 100))
         y = int(self.settings.get("time_y", 200))
+        w = int(self.settings.get("time_w", 150))
+        h = int(self.settings.get("time_h", 50))
         screen = QApplication.primaryScreen().availableGeometry()
-        x = max(screen.left(), min(x, screen.right() - 120))
-        y = max(screen.top(), min(y, screen.bottom() - 60))
-        self.move(x, y)
+        x = max(screen.left(), min(x, screen.right() - 50))
+        y = max(screen.top(), min(y, screen.bottom() - 30))
+        self.setGeometry(x, y, w, h)
 
-    def _save_position(self):
-        pos = self.pos()
-        self.settings.set("time_x", int(pos.x()))
-        self.settings.set("time_y", int(pos.y()))
+    def _save_geometry(self):
+        geo = self.geometry()
+        self.settings.set("time_x", int(geo.x()))
+        self.settings.set("time_y", int(geo.y()))
+        self.settings.set("time_w", int(geo.width()))
+        self.settings.set("time_h", int(geo.height()))
 
     def _raise_top(self):
         if self._visible and not self._hidden_fullscreen:
@@ -141,7 +149,7 @@ class ClockWindow(QWidget):
             self.show()
 
     def hide_widget(self):
-        self._save_position()
+        self._save_geometry()
         self._visible = False
         self.hide()
 
@@ -154,19 +162,58 @@ class ClockWindow(QWidget):
 
     def mousePressEvent(self, event):  # type: ignore[override]
         if event.button() == Qt.LeftButton:
-            self._drag_offset = event.globalPosition().toPoint() - self.frameGeometry().topLeft()
+            pos = event.position().toPoint()
+            rect = self.rect()
+            margin = 8
+            if pos.x() > rect.width() - margin and pos.y() > rect.height() - margin:
+                self._is_resizing = True
+                self._resize_edge = 3
+            elif pos.x() > rect.width() - margin:
+                self._is_resizing = True
+                self._resize_edge = 1
+            elif pos.y() > rect.height() - margin:
+                self._is_resizing = True
+                self._resize_edge = 2
+            else:
+                self._drag_offset = event.globalPosition().toPoint() - self.frameGeometry().topLeft()
             event.accept()
 
     def mouseMoveEvent(self, event):  # type: ignore[override]
-        if self._drag_offset is not None and event.buttons() & Qt.LeftButton:
+        pos = event.position().toPoint()
+        rect = self.rect()
+        margin = 8
+
+        if not (event.buttons() & Qt.LeftButton):
+            if pos.x() > rect.width() - margin and pos.y() > rect.height() - margin:
+                self.setCursor(Qt.SizeFDiagCursor)
+            elif pos.x() > rect.width() - margin:
+                self.setCursor(Qt.SizeHorCursor)
+            elif pos.y() > rect.height() - margin:
+                self.setCursor(Qt.SizeVerCursor)
+            else:
+                self.setCursor(Qt.ArrowCursor)
+            return
+
+        if self._is_resizing:
+            new_w = self.width()
+            new_h = self.height()
+            if self._resize_edge in (1, 3):
+                new_w = pos.x()
+            if self._resize_edge in (2, 3):
+                new_h = pos.y()
+            self.resize(max(100, new_w), max(40, new_h))
+            event.accept()
+        elif self._drag_offset is not None:
             self.move(event.globalPosition().toPoint() - self._drag_offset)
             event.accept()
 
     def mouseReleaseEvent(self, event):  # type: ignore[override]
-        if self._drag_offset is not None:
-            self._drag_offset = None
-            self._save_position()
-            event.accept()
+        self._drag_offset = None
+        self._is_resizing = False
+        self._resize_edge = 0
+        self._save_geometry()
+        self.setCursor(Qt.ArrowCursor)
+        event.accept()
 
 
 class MonitorWindow(QWidget):
@@ -177,6 +224,8 @@ class MonitorWindow(QWidget):
         self.ctrl = app_controller
         self.settings = app_controller.settings
         self._drag_offset: Optional[QPoint] = None
+        self._is_resizing = False
+        self._resize_edge = 0
 
         self._last_dl = ""
         self._last_ul = ""
@@ -188,7 +237,7 @@ class MonitorWindow(QWidget):
         self._init_window()
         self._init_ui()
         self._apply_visibility()
-        self._load_position()
+        self._load_geometry()
 
     def _init_window(self):
         self.setWindowTitle("PerfMonitor")
@@ -196,6 +245,7 @@ class MonitorWindow(QWidget):
             Qt.FramelessWindowHint | Qt.Tool | Qt.WindowStaysOnTopHint
         )
         self.setAttribute(Qt.WA_TranslucentBackground, True)
+        self.setMouseTracking(True)
 
     def _label(self, text: str, color: str, size: int = 11, bold: bool = False) -> QLabel:
         lbl = QLabel(text)
@@ -283,18 +333,22 @@ class MonitorWindow(QWidget):
         self.gpu_val.setVisible(show_gpu)
         self.gpu_temp.setVisible(show_gpu)
 
-    def _load_position(self):
+    def _load_geometry(self):
         x = int(self.settings.get("window_x", 100))
         y = int(self.settings.get("window_y", 100))
+        w = int(self.settings.get("window_w", 250))
+        h = int(self.settings.get("window_h", 60))
         screen = QApplication.primaryScreen().availableGeometry()
-        x = max(screen.left(), min(x, screen.right() - 120))
-        y = max(screen.top(), min(y, screen.bottom() - 70))
-        self.move(x, y)
+        x = max(screen.left(), min(x, screen.right() - 50))
+        y = max(screen.top(), min(y, screen.bottom() - 30))
+        self.setGeometry(x, y, w, h)
 
-    def _save_position(self):
-        pos = self.pos()
-        self.settings.set("window_x", int(pos.x()))
-        self.settings.set("window_y", int(pos.y()))
+    def _save_geometry(self):
+        geo = self.geometry()
+        self.settings.set("window_x", int(geo.x()))
+        self.settings.set("window_y", int(geo.y()))
+        self.settings.set("window_w", int(geo.width()))
+        self.settings.set("window_h", int(geo.height()))
 
     def _toggle_monitor(self, key: str, checked: bool):
         self.settings.set(key, checked)
@@ -384,27 +438,78 @@ class MonitorWindow(QWidget):
         clock_menu.addAction(tz_action)
 
         menu.addSeparator()
+        reset_action = QAction("Reset Location", self)
+        reset_action.triggered.connect(self._reset_pos)
+        menu.addAction(reset_action)
+
+        menu.addSeparator()
         exit_action = QAction("Exit", self)
         exit_action.triggered.connect(self.ctrl.exit_app)
         menu.addAction(exit_action)
 
         menu.exec(event.globalPos())
 
+    def _reset_pos(self):
+        screen = QApplication.primaryScreen().availableGeometry()
+        self.move(screen.left() + 50, screen.top() + 50)
+        self.ctrl.clock.move(screen.left() + 50, screen.top() + 150)
+        self._save_geometry()
+        self.ctrl.clock._save_geometry()
+
     def mousePressEvent(self, event):  # type: ignore[override]
         if event.button() == Qt.LeftButton:
-            self._drag_offset = event.globalPosition().toPoint() - self.frameGeometry().topLeft()
+            pos = event.position().toPoint()
+            rect = self.rect()
+            margin = 8
+            if pos.x() > rect.width() - margin and pos.y() > rect.height() - margin:
+                self._is_resizing = True
+                self._resize_edge = 3
+            elif pos.x() > rect.width() - margin:
+                self._is_resizing = True
+                self._resize_edge = 1
+            elif pos.y() > rect.height() - margin:
+                self._is_resizing = True
+                self._resize_edge = 2
+            else:
+                self._drag_offset = event.globalPosition().toPoint() - self.frameGeometry().topLeft()
             event.accept()
 
     def mouseMoveEvent(self, event):  # type: ignore[override]
-        if self._drag_offset is not None and event.buttons() & Qt.LeftButton:
+        pos = event.position().toPoint()
+        rect = self.rect()
+        margin = 8
+
+        if not (event.buttons() & Qt.LeftButton):
+            if pos.x() > rect.width() - margin and pos.y() > rect.height() - margin:
+                self.setCursor(Qt.SizeFDiagCursor)
+            elif pos.x() > rect.width() - margin:
+                self.setCursor(Qt.SizeHorCursor)
+            elif pos.y() > rect.height() - margin:
+                self.setCursor(Qt.SizeVerCursor)
+            else:
+                self.setCursor(Qt.ArrowCursor)
+            return
+
+        if self._is_resizing:
+            new_w = self.width()
+            new_h = self.height()
+            if self._resize_edge in (1, 3):
+                new_w = pos.x()
+            if self._resize_edge in (2, 3):
+                new_h = pos.y()
+            self.resize(max(200, new_w), max(40, new_h))
+            event.accept()
+        elif self._drag_offset is not None:
             self.move(event.globalPosition().toPoint() - self._drag_offset)
             event.accept()
 
     def mouseReleaseEvent(self, event):  # type: ignore[override]
-        if self._drag_offset is not None:
-            self._drag_offset = None
-            self._save_position()
-            event.accept()
+        self._drag_offset = None
+        self._is_resizing = False
+        self._resize_edge = 0
+        self._save_geometry()
+        self.setCursor(Qt.ArrowCursor)
+        event.accept()
 
 
 class PerfMonitorQt:
@@ -496,8 +601,9 @@ class PerfMonitorQt:
             self.clock.set_fullscreen_hidden(False)
 
     def exit_app(self):
-        self.main_window._save_position()
-        self.clock._save_position()
+        self.main_window._save_geometry()
+        self.clock._save_geometry()
+        self.app.quit()
         self.fullscreen.stop()
         self.system.close()
         self.app.quit()

@@ -28,6 +28,10 @@ class SettingsManager:
         "time_offset": 0.0,
         "time_x": 100,
         "time_y": 200,
+        "window_w": 250,
+        "window_h": 60,
+        "time_w": 150,
+        "time_h": 50,
     }
     
     def __init__(self):
