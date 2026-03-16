@@ -5,6 +5,13 @@ from dataclasses import dataclass
 from typing import Optional
 import subprocess
 import time
+import sys
+
+# Windows-only flag for subprocess to hide the console window
+if sys.platform == "win32":
+    CREATE_NO_WINDOW = subprocess.CREATE_NO_WINDOW
+else:
+    CREATE_NO_WINDOW = 0
 
 
 @dataclass
@@ -39,7 +46,7 @@ class SystemMonitor:
             result = subprocess.run(
                 ["nvidia-smi", "--query-gpu=utilization.gpu", "--format=csv,noheader,nounits"],
                 capture_output=True, text=True, timeout=3,
-                creationflags=subprocess.CREATE_NO_WINDOW
+                creationflags=CREATE_NO_WINDOW
             )
             return result.returncode == 0
         except (FileNotFoundError, subprocess.TimeoutExpired, OSError):
@@ -58,7 +65,7 @@ class SystemMonitor:
             result = subprocess.run(
                 ["nvidia-smi", "--query-gpu=utilization.gpu,temperature.gpu", "--format=csv,noheader,nounits"],
                 capture_output=True, text=True, timeout=2,
-                creationflags=subprocess.CREATE_NO_WINDOW
+                creationflags=CREATE_NO_WINDOW
             )
             if result.returncode == 0:
                 parts = result.stdout.strip().split(',')

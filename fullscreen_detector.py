@@ -1,10 +1,14 @@
 # Handles detecting fullscreen apps so we can hide the widget during movies
 
-import ctypes
-from ctypes import wintypes
-import win32gui
-import win32process
 import psutil
+import sys
+
+# Windows-only imports
+if sys.platform == "win32":
+    import ctypes
+    from ctypes import wintypes
+    import win32gui
+    import win32process
 
 
 class FullscreenDetector:
@@ -29,7 +33,10 @@ class FullscreenDetector:
     }
     
     def __init__(self):
-        self._user32 = ctypes.windll.user32
+        if sys.platform == "win32":
+            self._user32 = ctypes.windll.user32
+        else:
+            self._user32 = None
     
     def _get_foreground_window_info(self):
         """Figure out what window is currently in focus."""
@@ -74,6 +81,12 @@ class FullscreenDetector:
     
     def should_hide(self) -> bool:
         """Returns True if we should hide - a video app is fullscreen."""
+        if sys.platform != "win32":
+            # For Linux/macOS, we safely fallback to False initially.
+            # Implementing cross-platform robust fullscreen detection requires
+            # heavy OS-specific window manager hooks (X11/Wayland/AppKit).
+            return False
+            
         hwnd, rect, process_name = self._get_foreground_window_info()
         
         if not hwnd:

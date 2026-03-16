@@ -58,9 +58,24 @@ class PerfMonitor:
         self.root.protocol("WM_DELETE_WINDOW", self._hide)
     
     def _setup_transparency(self):
-        """Make the background invisible."""
-        self.root.configure(bg=self.TRANSPARENT)
-        self.root.attributes("-transparentcolor", self.TRANSPARENT)
+        """Make the background invisible based on OS."""
+        if sys.platform == "win32":
+            self.root.configure(bg=self.TRANSPARENT)
+            self.root.attributes("-transparentcolor", self.TRANSPARENT)
+        elif sys.platform == "darwin":  # macOS
+            self.root.configure(bg=self.TRANSPARENT)
+            self.root.attributes("-transparent", True)
+            # macOS Tkinter transparency is limited, -alpha handles overall opacity
+        else:  # Linux (X11/Wayland)
+            # On Linux, setting alpha makes the whole window translucent.
+            # True "click-through" transparency requires an X11 compositor (like picom) 
+            # and specific window hints which Tkinter doesn't easily expose.
+            # A common workaround is a dark translucent background.
+            self.root.configure(bg="#222222")
+            self.root.attributes("-type", "dock") # Avoid window manager decorations
+            self.root.wait_visibility(self.root)
+            self.root.attributes("-alpha", 0.8)
+
         self.root.attributes("-topmost", True)
     
     def _keep_on_top(self):
