@@ -1,4 +1,5 @@
 import datetime
+import os
 import sys
 from typing import Optional
 
@@ -61,9 +62,7 @@ class ClockWindow(QWidget):
         self.setMouseTracking(True)
 
     def enforce_always_on_top(self):
-        self.setWindowFlag(Qt.WindowStaysOnTopHint, True)
         if self._visible and not self._hidden_fullscreen:
-            self.show()
             self.raise_()
 
     def _init_ui(self):
@@ -128,7 +127,7 @@ class ClockWindow(QWidget):
         screen_obj = QGuiApplication.screenAt(QPoint(x, y))
         if screen_obj is None:
             screen_obj = QApplication.primaryScreen()
-        screen = screen_obj.availableGeometry()
+        screen = screen_obj.geometry()
         x = max(screen.left(), min(x, screen.right() - self.width()))
         y = max(screen.top(), min(y, screen.bottom() - self.height()))
         self.move(x, y)
@@ -243,9 +242,7 @@ class MonitorWindow(QWidget):
         self.setMouseTracking(True)
 
     def enforce_always_on_top(self):
-        self.setWindowFlag(Qt.WindowStaysOnTopHint, True)
         if self.isVisible():
-            self.show()
             self.raise_()
 
     def _label(self, text: str, color: str, size: int = 11, bold: bool = False) -> QLabel:
@@ -364,7 +361,7 @@ class MonitorWindow(QWidget):
         screen_obj = QGuiApplication.screenAt(QPoint(x, y))
         if screen_obj is None:
             screen_obj = QApplication.primaryScreen()
-        screen = screen_obj.availableGeometry()
+        screen = screen_obj.geometry()
         x = max(screen.left(), min(x, screen.right() - self.width()))
         y = max(screen.top(), min(y, screen.bottom() - self.height()))
         self.move(x, y)
@@ -392,7 +389,7 @@ class MonitorWindow(QWidget):
         screen_obj = QGuiApplication.screenAt(QPoint(self.x(), self.y()))
         if screen_obj is None:
             screen_obj = QApplication.primaryScreen()
-        screen = screen_obj.availableGeometry()
+        screen = screen_obj.geometry()
         self.move(screen.left() + 50, screen.top() + 50)
         self.ctrl.clock.move(screen.left() + 50, screen.top() + 150)
         self._save_geometry()
@@ -437,6 +434,17 @@ class SettingsWindow(QWidget):
         self.startup_cb.setChecked(SettingsManager.is_in_startup())
         self.startup_cb.toggled.connect(self._on_startup_toggled)
         form.addRow(self.startup_cb)
+
+        self.prefer_xwayland_cb = None
+        if sys.platform == "linux" and os.environ.get("XDG_SESSION_TYPE", "").strip().lower() == "wayland":
+            self.prefer_xwayland_cb = QCheckBox("Prefer XWayland mode (for panel stacking)")
+            self.prefer_xwayland_cb.setChecked(bool(self.settings.get("prefer_xwayland", True)))
+            self.prefer_xwayland_cb.toggled.connect(self._on_prefer_xwayland_toggled)
+            form.addRow(self.prefer_xwayland_cb)
+
+            restart_note = QLabel("Restart required after changing XWayland preference.")
+            restart_note.setStyleSheet("color: #BBBBBB; font-size: 9pt;")
+            form.addRow(restart_note)
 
         self.show_net_cb = QCheckBox("Show Network")
         self.show_net_cb.setChecked(bool(self.settings.get("show_network", True)))
@@ -520,6 +528,9 @@ class SettingsWindow(QWidget):
             self.startup_cb.blockSignals(True)
             self.startup_cb.setChecked(not checked)
             self.startup_cb.blockSignals(False)
+
+    def _on_prefer_xwayland_toggled(self, checked: bool):
+        self.settings.set("prefer_xwayland", checked)
 
     def _on_toggle(self, key: str, checked: bool):
         self.settings.set(key, checked)

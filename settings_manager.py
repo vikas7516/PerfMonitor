@@ -28,6 +28,7 @@ class SettingsManager:
         "show_ram": True,
         "show_gpu": True,
         "show_time": True,
+        "prefer_xwayland": True,
         "time_fmt": "12h",
         "time_offset": 0.0,
         "monitor_scale": 1.0,
