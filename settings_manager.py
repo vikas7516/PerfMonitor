@@ -30,6 +30,8 @@ class SettingsManager:
         "show_time": True,
         "time_fmt": "12h",
         "time_offset": 0.0,
+        "monitor_scale": 1.0,
+        "clock_scale": 1.0,
         "time_x": 100,
         "time_y": 200,
         "window_w": 250,
