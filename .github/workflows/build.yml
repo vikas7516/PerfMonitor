@@ -21,9 +21,6 @@ jobs:
           - os: windows-latest
             requirements_file: requirements/windows.txt
             artifact_name: PerfMonitor-windows
-          - os: macos-latest
-            requirements_file: requirements/macos.txt
-            artifact_name: PerfMonitor-macos
         
     steps:
     - uses: actions/checkout@v4

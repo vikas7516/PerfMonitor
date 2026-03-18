@@ -5,6 +5,7 @@ The implementation is delegated to platform-specific backends in
 """
 
 import threading
+import logging
 
 from platform_backends.fullscreen import create_fullscreen_backend
 
@@ -13,6 +14,7 @@ class FullscreenDetector:
     """Public fullscreen detector API used by the app."""
 
     POLL_SECONDS = 1.2
+    _LOG = logging.getLogger(__name__)
 
     def __init__(self):
         self._backend = create_fullscreen_backend()
@@ -28,6 +30,7 @@ class FullscreenDetector:
             try:
                 value = bool(self._backend.should_hide())
             except Exception:
+                self._LOG.debug("Fullscreen backend poll failed", exc_info=True)
                 value = False
 
             with self._lock:
@@ -41,3 +44,5 @@ class FullscreenDetector:
 
     def stop(self):
         self._stop_event.set()
+        if self._thread.is_alive():
+            self._thread.join(timeout=1.5)

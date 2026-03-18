@@ -1,24 +1,19 @@
 import datetime
-import importlib
 import sys
 from typing import Optional
 
-QtCore = importlib.import_module("PySide6.QtCore")
-QtGui = importlib.import_module("PySide6.QtGui")
-QtWidgets = importlib.import_module("PySide6.QtWidgets")
+from PySide6.QtCore import QPoint, QTimer, Qt
+from PySide6.QtGui import QAction, QActionGroup, QCursor, QGuiApplication
+from PySide6.QtWidgets import (
+    QApplication,
+    QHBoxLayout,
+    QInputDialog,
+    QLabel,
+    QMenu,
+    QVBoxLayout,
+    QWidget,
+)
 
-QPoint = QtCore.QPoint
-QTimer = QtCore.QTimer
-Qt = QtCore.Qt
-QAction = QtGui.QAction
-QApplication = QtWidgets.QApplication
-QHBoxLayout = QtWidgets.QHBoxLayout
-QInputDialog = QtWidgets.QInputDialog
-QLabel = QtWidgets.QLabel
-QMenu = QtWidgets.QMenu
-QVBoxLayout = QtWidgets.QVBoxLayout
-QWidget = QtWidgets.QWidget
-QCursor = QtGui.QCursor
 
 from fullscreen_detector import FullscreenDetector
 from settings_manager import SettingsManager
@@ -29,9 +24,10 @@ from system_monitor import SystemMonitor
 class ClockWindow(QWidget):
     """Independent floating clock/date widget."""
 
-    def __init__(self, settings: SettingsManager):
+    def __init__(self, app_controller: "PerfMonitorQt"):
         super().__init__()
-        self.settings = settings
+        self.ctrl = app_controller
+        self.settings = app_controller.settings
         self._visible = True
         self._hidden_fullscreen = False
         self._drag_offset: Optional[QPoint] = None
@@ -97,7 +93,10 @@ class ClockWindow(QWidget):
         y = int(self.settings.get("time_y", 200))
         w = int(self.settings.get("time_w", 150))
         h = int(self.settings.get("time_h", 50))
-        screen = QApplication.primaryScreen().availableGeometry()
+        screen_obj = QGuiApplication.screenAt(QPoint(x, y))
+        if screen_obj is None:
+            screen_obj = QApplication.primaryScreen()
+        screen = screen_obj.availableGeometry()
         x = max(screen.left(), min(x, screen.right() - 50))
         y = max(screen.top(), min(y, screen.bottom() - 30))
         self.setGeometry(x, y, w, h)
@@ -159,6 +158,9 @@ class ClockWindow(QWidget):
             self.hide()
         elif self._visible:
             self.show()
+
+    def contextMenuEvent(self, event):  # type: ignore[override]
+        self.ctrl.show_context_menu(event.globalPos())
 
     def mousePressEvent(self, event):  # type: ignore[override]
         if event.button() == Qt.LeftButton:
@@ -338,7 +340,10 @@ class MonitorWindow(QWidget):
         y = int(self.settings.get("window_y", 100))
         w = int(self.settings.get("window_w", 250))
         h = int(self.settings.get("window_h", 60))
-        screen = QApplication.primaryScreen().availableGeometry()
+        screen_obj = QGuiApplication.screenAt(QPoint(x, y))
+        if screen_obj is None:
+            screen_obj = QApplication.primaryScreen()
+        screen = screen_obj.availableGeometry()
         x = max(screen.left(), min(x, screen.right() - 50))
         y = max(screen.top(), min(y, screen.bottom() - 30))
         self.setGeometry(x, y, w, h)
@@ -379,12 +384,12 @@ class MonitorWindow(QWidget):
             current_offset,
             -14.0,
             14.0,
-            1,
+            2,
         )
         if ok:
             self.settings.set("time_offset", float(val))
 
-    def contextMenuEvent(self, event):  # type: ignore[override]
+    def show_context_menu(self, global_pos):
         menu = QMenu(self)
 
         startup_action = QAction("Start with OS", self, checkable=True)
@@ -425,6 +430,10 @@ class MonitorWindow(QWidget):
         clock_menu = menu.addMenu("Clock Settings")
         fmt_12 = QAction("12-hour format", self, checkable=True)
         fmt_24 = QAction("24-hour format", self, checkable=True)
+        fmt_group = QActionGroup(self)
+        fmt_group.setExclusive(True)
+        fmt_group.addAction(fmt_12)
+        fmt_group.addAction(fmt_24)
         fmt_12.setChecked(self.settings.get("time_fmt", "12h") == "12h")
         fmt_24.setChecked(self.settings.get("time_fmt", "12h") == "24h")
         fmt_12.triggered.connect(lambda checked: checked and self._set_time_fmt("12h"))
@@ -447,10 +456,16 @@ class MonitorWindow(QWidget):
         exit_action.triggered.connect(self.ctrl.exit_app)
         menu.addAction(exit_action)
 
-        menu.exec(event.globalPos())
+        menu.exec(global_pos)
+
+    def contextMenuEvent(self, event):  # type: ignore[override]
+        self.show_context_menu(event.globalPos())
 
     def _reset_pos(self):
-        screen = QApplication.primaryScreen().availableGeometry()
+        screen_obj = QGuiApplication.screenAt(QCursor.pos())
+        if screen_obj is None:
+            screen_obj = QApplication.primaryScreen()
+        screen = screen_obj.availableGeometry()
         self.move(screen.left() + 50, screen.top() + 50)
         self.ctrl.clock.move(screen.left() + 50, screen.top() + 150)
         self._save_geometry()
@@ -527,7 +542,7 @@ class PerfMonitorQt:
         self.app.setQuitOnLastWindowClosed(False)
 
         self.main_window = MonitorWindow(self)
-        self.clock = ClockWindow(self.settings)
+        self.clock = ClockWindow(self)
 
         self.main_window.show()
         if self.settings.get("show_time", True):
@@ -553,11 +568,19 @@ class PerfMonitorQt:
         if self.clock.isVisible() and not self._hidden_fullscreen:
             self.clock.raise_()
 
+    def show_context_menu(self, global_pos):
+        self.main_window.show_context_menu(global_pos)
+
     def update_stats(self):
         if self._hidden_fullscreen:
             return
 
-        if self.settings.get("show_network", True):
+        show_net = bool(self.settings.get("show_network", True))
+        show_cpu = bool(self.settings.get("show_cpu", True))
+        show_ram = bool(self.settings.get("show_ram", True))
+        show_gpu = bool(self.settings.get("show_gpu", True))
+
+        if show_net:
             s = self.speed.get_speed()
             self.main_window._set_text(
                 self.main_window.dl_speed,
@@ -570,23 +593,24 @@ class PerfMonitorQt:
                 "_last_ul",
             )
 
+        if not (show_cpu or show_ram or show_gpu):
+            return
+
         st = self.system.get_stats()
 
-        if self.settings.get("show_cpu", True):
+        if show_cpu:
             self.main_window._set_text(self.main_window.cpu_val, st.cpu_display, "_last_cpu")
 
-        if self.settings.get("show_ram", True):
+        if show_ram:
             self.main_window._set_text(self.main_window.ram_val, st.ram_display, "_last_ram")
 
-        if self.settings.get("show_gpu", True):
+        if show_gpu:
             self.main_window._set_text(self.main_window.gpu_val, st.gpu_display, "_last_gpu")
             self.main_window._set_text(
                 self.main_window.gpu_temp,
                 st.gpu_temp_display if st.gpu_temp is not None else "",
                 "_last_gpu_temp",
             )
-
-        self.clock.update_clock()
 
     def check_fullscreen(self):
         fs = self.fullscreen.should_hide()
@@ -601,9 +625,12 @@ class PerfMonitorQt:
             self.clock.set_fullscreen_hidden(False)
 
     def exit_app(self):
+        self._update_timer.stop()
+        self._fs_timer.stop()
+        self._top_timer.stop()
         self.main_window._save_geometry()
         self.clock._save_geometry()
-        self.app.quit()
+
         self.fullscreen.stop()
         self.system.close()
         self.app.quit()

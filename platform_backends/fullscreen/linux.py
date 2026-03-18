@@ -69,11 +69,7 @@ class LinuxFullscreenBackend:
             return False
 
         state = self._run_cmd(["xprop", "-id", win_id, "_NET_WM_STATE"])
-        if "_NET_WM_STATE_FULLSCREEN" in state:
-            return True
-
-        bypass = self._run_cmd(["xprop", "-id", win_id, "_NET_WM_BYPASS_COMPOSITOR"])
-        return "= 1" in bypass
+        return "_NET_WM_STATE_FULLSCREEN" in state
 
     def _wayland_hyprland_should_hide(self) -> bool:
         if not self._has_hyprctl:

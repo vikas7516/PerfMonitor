@@ -1,10 +1,13 @@
 # Saves window position and handles Windows startup registry
 
 import json
+import logging
 import os
+import shlex
+import subprocess
 import sys
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any, Dict, List
 
 # Conditionally import winreg for Windows
 if sys.platform == "win32":
@@ -15,6 +18,7 @@ class SettingsManager:
     """Saves settings to AppData and manages Windows startup."""
     
     APP_NAME = "PerfMonitor"
+    _LOG = logging.getLogger(__name__)
     
     DEFAULT_SETTINGS = {
         "window_x": 100,
@@ -44,9 +48,7 @@ class SettingsManager:
         if sys.platform == "win32":
             appdata = os.environ.get("APPDATA", str(Path.home() / "AppData" / "Roaming"))
             config_dir = Path(appdata) / self.APP_NAME
-        elif sys.platform == "darwin":
-            config_dir = Path.home() / "Library" / "Application Support" / self.APP_NAME
-        else: # Linux
+        else:  # Linux and other Unix-like platforms
             config_dir = Path.home() / ".config" / self.APP_NAME
             
         config_dir.mkdir(parents=True, exist_ok=True)
@@ -69,7 +71,7 @@ class SettingsManager:
             with open(self._config_path, "w", encoding="utf-8") as f:
                 json.dump(self._settings, f, indent=2)
         except IOError:
-            pass
+            self._LOG.exception("Failed to save settings file")
     
     def get(self, key: str, default: Any = None) -> Any:
         return self._settings.get(key, default)
@@ -79,61 +81,59 @@ class SettingsManager:
         self.save_settings()
     
     @classmethod
-    def get_exe_path(cls) -> str:
-        """Get the right path for startup - works for both .py and .exe"""
+    def _startup_command_parts(cls) -> List[str]:
+        """Build startup command as argv parts for reliable per-platform quoting."""
         if getattr(sys, 'frozen', False):
-            return sys.executable
-        else:
-            script = os.path.abspath(os.path.join(os.path.dirname(__file__), "main.py"))
-            return f'pythonw "{script}"'
-    
+            return [sys.executable]
+
+        script = os.path.abspath(os.path.join(os.path.dirname(__file__), "main.py"))
+
+        if sys.platform == "win32":
+            py_exec = Path(sys.executable)
+            pythonw = py_exec.with_name("pythonw.exe")
+            interpreter = str(pythonw if pythonw.exists() else py_exec)
+            return [interpreter, script]
+
+        return [sys.executable, script]
+
+    @classmethod
+    def _windows_run_value(cls, command_parts: List[str]) -> str:
+        """Convert argv into a Windows Run key command string."""
+        return subprocess.list2cmdline(command_parts)
+
+    @classmethod
+    def _linux_exec_value(cls, command_parts: List[str]) -> str:
+        """Convert argv into a desktop-entry Exec string."""
+        return shlex.join(command_parts)
+
+    @classmethod
+    def _linux_autostart_path(cls) -> Path:
+        return Path.home() / ".config" / "autostart" / f"{cls.APP_NAME.lower()}.desktop"
+
     @classmethod
     def add_to_startup(cls) -> bool:
         """Add to OS startup."""
-        exe_path = cls.get_exe_path()
+        command_parts = cls._startup_command_parts()
         
         if sys.platform == "win32":
             try:
-                key = winreg.OpenKey(
+                run_value = cls._windows_run_value(command_parts)
+                with winreg.OpenKey(
                     winreg.HKEY_CURRENT_USER,
                     r"Software\Microsoft\Windows\CurrentVersion\Run",
                     0, winreg.KEY_SET_VALUE
-                )
-                winreg.SetValueEx(key, cls.APP_NAME, 0, winreg.REG_SZ, exe_path)
-                winreg.CloseKey(key)
+                ) as key:
+                    winreg.SetValueEx(key, cls.APP_NAME, 0, winreg.REG_SZ, run_value)
                 return True
-            except Exception:
+            except OSError:
+                cls._LOG.exception("Failed to add startup registry entry")
                 return False
-                
-        elif sys.platform == "darwin":
-            plist_path = Path.home() / "Library" / "LaunchAgents" / f"com.{cls.APP_NAME.lower()}.plist"
-            plist_content = f"""<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0">
-<dict>
-    <key>Label</key>
-    <string>com.{cls.APP_NAME.lower()}</string>
-    <key>ProgramArguments</key>
-    <array>
-        <string>{exe_path.split()[0]}</string>
-        <string>{exe_path.split()[1] if len(exe_path.split()) > 1 else ""}</string>
-    </array>
-    <key>RunAtLoad</key>
-    <true/>
-</dict>
-</plist>"""
-            try:
-                plist_path.parent.mkdir(parents=True, exist_ok=True)
-                plist_path.write_text(plist_content)
-                return True
-            except Exception:
-                return False
-                
-        else: # Linux
-            desktop_path = Path.home() / ".config" / "autostart" / f"{cls.APP_NAME.lower()}.desktop"
+
+        else:  # Linux and other Unix-like platforms
+            desktop_path = cls._linux_autostart_path()
             desktop_content = f"""[Desktop Entry]
 Type=Application
-Exec={exe_path}
+Exec={cls._linux_exec_value(command_parts)}
 Hidden=false
 NoDisplay=false
 X-GNOME-Autostart-enabled=true
@@ -144,7 +144,8 @@ Comment=Performance Monitor Widget
                 desktop_path.parent.mkdir(parents=True, exist_ok=True)
                 desktop_path.write_text(desktop_content)
                 return True
-            except Exception:
+            except OSError:
+                cls._LOG.exception("Failed to write Linux autostart desktop file")
                 return False
     
     @classmethod
@@ -152,37 +153,28 @@ Comment=Performance Monitor Widget
         """Remove from OS startup."""
         if sys.platform == "win32":
             try:
-                key = winreg.OpenKey(
+                with winreg.OpenKey(
                     winreg.HKEY_CURRENT_USER,
                     r"Software\Microsoft\Windows\CurrentVersion\Run",
                     0, winreg.KEY_SET_VALUE
-                )
-                try:
-                    winreg.DeleteValue(key, cls.APP_NAME)
-                except FileNotFoundError:
-                    pass
-                winreg.CloseKey(key)
+                ) as key:
+                    try:
+                        winreg.DeleteValue(key, cls.APP_NAME)
+                    except FileNotFoundError:
+                        pass
                 return True
-            except Exception:
+            except OSError:
+                cls._LOG.exception("Failed to remove startup registry entry")
                 return False
-                
-        elif sys.platform == "darwin":
-            plist_path = Path.home() / "Library" / "LaunchAgents" / f"com.{cls.APP_NAME.lower()}.plist"
-            if plist_path.exists():
-                try:
-                    plist_path.unlink()
-                    return True
-                except Exception:
-                    return False
-            return True
-            
-        else: # Linux
-            desktop_path = Path.home() / ".config" / "autostart" / f"{cls.APP_NAME.lower()}.desktop"
+
+        else:  # Linux and other Unix-like platforms
+            desktop_path = cls._linux_autostart_path()
             if desktop_path.exists():
                 try:
                     desktop_path.unlink()
                     return True
-                except Exception:
+                except OSError:
+                    cls._LOG.exception("Failed to remove Linux autostart desktop file")
                     return False
             return True
     
@@ -191,25 +183,19 @@ Comment=Performance Monitor Widget
         """Check if we're set to start with OS."""
         if sys.platform == "win32":
             try:
-                key = winreg.OpenKey(
+                with winreg.OpenKey(
                     winreg.HKEY_CURRENT_USER,
                     r"Software\Microsoft\Windows\CurrentVersion\Run",
                     0, winreg.KEY_QUERY_VALUE
-                )
-                try:
-                    winreg.QueryValueEx(key, cls.APP_NAME)
-                    winreg.CloseKey(key)
-                    return True
-                except FileNotFoundError:
-                    winreg.CloseKey(key)
-                    return False
-            except Exception:
+                ) as key:
+                    try:
+                        winreg.QueryValueEx(key, cls.APP_NAME)
+                        return True
+                    except FileNotFoundError:
+                        return False
+            except OSError:
                 return False
-                
-        elif sys.platform == "darwin":
-            plist_path = Path.home() / "Library" / "LaunchAgents" / f"com.{cls.APP_NAME.lower()}.plist"
-            return plist_path.exists()
-            
-        else: # Linux
-            desktop_path = Path.home() / ".config" / "autostart" / f"{cls.APP_NAME.lower()}.desktop"
+
+        else:  # Linux and other Unix-like platforms
+            desktop_path = cls._linux_autostart_path()
             return desktop_path.exists()

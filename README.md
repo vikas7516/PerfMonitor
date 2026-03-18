@@ -1,12 +1,12 @@
 # PerfMonitor
 
-A beautiful, transparent system monitor and clock widget for **Windows, Linux, and macOS**. Displays network speed, CPU, RAM, and GPU stats in a floating overlay, alongside an independent floating clock.
+A beautiful, transparent system monitor and clock widget for **Windows and Linux**. Displays network speed, CPU, RAM, and GPU stats in a floating overlay, alongside an independent floating clock.
 
 <img src="icon.png" alt="PerfMonitor" width="180" />
 
 ## Features
 
-- **Cross-Platform Support**: Works seamlessly on Windows, Linux, and macOS.
+- **Cross-Platform Support**: Works on Windows and Linux.
 - **Dynamic UI**: Right-click to enable/disable individual monitor modules (Network, CPU, RAM, GPU). The UI shrinks/grows automatically.
 - **Independent Clock Widget**:
   - Drag and place anywhere independently of the monitors.
@@ -16,7 +16,7 @@ A beautiful, transparent system monitor and clock widget for **Windows, Linux, a
 - **Smart Hiding**: Both widgets automatically hide when *any* application enters fullscreen mode and reappear when you're done.
 - **Native-Style Transparent UI**: Powered by Qt (`PySide6`) with frameless translucent windows.
 - **Platform Adapter Architecture**: OS-specific fullscreen logic is split into dedicated backends.
-- **Real-time Stats**: High-accuracy monitoring for network, CPU, RAM, and NVIDIA GPU (via `nvidia-smi`).
+- **Real-time Stats**: High-accuracy monitoring for network, CPU, RAM, and NVIDIA GPU (via NVML with `nvidia-smi` fallback).
 - **Persistence**: Remembers window positions and settings between sessions.
 
 ## Download
@@ -41,8 +41,6 @@ pip install -r requirements/windows.txt
 # Linux
 pip install -r requirements/linux.txt
 
-# macOS
-pip install -r requirements/macos.txt
 ```
 
 *Note for Linux users: You may need Qt runtime dependencies provided by your distro (for example common XCB/Wayland Qt libraries).*
@@ -79,12 +77,13 @@ pip install -r requirements/macos.txt
 
 - **Python** + **PySide6 (Qt)**: Core UI and transparent floating windows.
 - **psutil**: High-performance system and network metrics.
-- **nvidia-smi**: Reliable GPU utilization and temperature data.
+- **nvidia-ml-py** + **nvidia-smi fallback**: Reliable NVIDIA GPU utilization and temperature data.
 
 ## Requirements
 
-- Windows 10/11, Linux (with X11/Wayland support), or macOS.
+- Windows 10/11, Linux (with X11/Wayland support).
 - NVIDIA GPU (optional, for GPU metrics).
+- Non-NVIDIA GPUs currently show `N/A` for GPU metrics.
 - Python 3.9+ (if running from source).
 - Linux tools for best fullscreen support (optional but recommended):
   - `xprop` (X11)
@@ -98,13 +97,11 @@ pip install -r requirements/macos.txt
 - Each OS installs only its own dependency file:
   - `requirements/windows.txt`
   - `requirements/linux.txt`
-  - `requirements/macos.txt`
 - Builds are generated as **single-file binaries** (`--onefile`) so no `_internal` folder is required.
 - Pushing a tag like `v1.2.0` automatically publishes release archives for all OS artifacts.
 - Output artifact names:
   - `PerfMonitor-windows`
   - `PerfMonitor-linux`
-  - `PerfMonitor-macos`
 
 ## License
 
