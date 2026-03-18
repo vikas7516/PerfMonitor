@@ -60,6 +60,12 @@ class ClockWindow(QWidget):
         self.setAttribute(Qt.WA_TranslucentBackground, True)
         self.setMouseTracking(True)
 
+    def enforce_always_on_top(self):
+        self.setWindowFlag(Qt.WindowStaysOnTopHint, True)
+        if self._visible and not self._hidden_fullscreen:
+            self.show()
+            self.raise_()
+
     def _init_ui(self):
         layout = QVBoxLayout()
         layout.setContentsMargins(6, 2, 6, 2)
@@ -133,8 +139,7 @@ class ClockWindow(QWidget):
         self.settings.set("time_y", int(geo.y()))
 
     def _raise_top(self):
-        if self._visible and not self._hidden_fullscreen:
-            self.raise_()
+        self.enforce_always_on_top()
 
     def _get_current_time(self) -> datetime.datetime:
         offset_hours = float(self.settings.get("time_offset", 0.0))
@@ -236,6 +241,12 @@ class MonitorWindow(QWidget):
         )
         self.setAttribute(Qt.WA_TranslucentBackground, True)
         self.setMouseTracking(True)
+
+    def enforce_always_on_top(self):
+        self.setWindowFlag(Qt.WindowStaysOnTopHint, True)
+        if self.isVisible():
+            self.show()
+            self.raise_()
 
     def _label(self, text: str, color: str, size: int = 11, bold: bool = False) -> QLabel:
         lbl = QLabel(text)
@@ -575,10 +586,9 @@ class PerfMonitorQt:
         self._top_timer.start(3500)
 
     def raise_windows(self):
-        if self.main_window.isVisible() and not self._hidden_fullscreen:
-            self.main_window.raise_()
-        if self.clock.isVisible() and not self._hidden_fullscreen:
-            self.clock.raise_()
+        if not self._hidden_fullscreen:
+            self.main_window.enforce_always_on_top()
+            self.clock.enforce_always_on_top()
 
     def show_context_menu(self, global_pos):
         menu = QMenu()
