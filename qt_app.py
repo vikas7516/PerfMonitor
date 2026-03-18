@@ -64,7 +64,7 @@ class ClockWindow(QWidget):
         layout.setSpacing(0)
 
         self.time_lbl = QLabel("--:-- --")
-        self.time_lbl.setStyleSheet("color: #FFFFFF; font-size: 13pt; font-weight: 700;")
+        self.time_lbl.setAttribute(Qt.WA_TransparentForMouseEvents, True)
         layout.addWidget(self.time_lbl)
 
         date_row = QHBoxLayout()
@@ -72,21 +72,43 @@ class ClockWindow(QWidget):
         date_row.setSpacing(0)
 
         self.day_lbl = QLabel("---")
-        self.day_lbl.setStyleSheet("color: #FFFFFF; font-size: 9pt; font-weight: 700;")
+        self.day_lbl.setAttribute(Qt.WA_TransparentForMouseEvents, True)
 
-        sep_lbl = QLabel(" | ")
-        sep_lbl.setStyleSheet("color: #CCCCCC; font-size: 9pt;")
+        self.sep_lbl = QLabel(" | ")
+        self.sep_lbl.setAttribute(Qt.WA_TransparentForMouseEvents, True)
 
         self.date_lbl = QLabel("--- --, ----")
-        self.date_lbl.setStyleSheet("color: #CCCCCC; font-size: 9pt;")
+        self.date_lbl.setAttribute(Qt.WA_TransparentForMouseEvents, True)
 
         date_row.addWidget(self.day_lbl)
-        date_row.addWidget(sep_lbl)
+        date_row.addWidget(self.sep_lbl)
         date_row.addWidget(self.date_lbl)
         date_row.addStretch(1)
         layout.addLayout(date_row)
 
         self.setLayout(layout)
+        self._apply_scaled_styles()
+
+    def _apply_scaled_styles(self):
+        h_scale = min(max(self.height() / 50.0, 0.75), 2.0)
+        w_scale = min(max(self.width() / 150.0, 0.75), 2.0)
+        scale = min(h_scale, w_scale)
+
+        time_size = max(10, int(round(13 * scale)))
+        date_size = max(8, int(round(9 * scale)))
+
+        self.time_lbl.setStyleSheet(
+            f"color: #FFFFFF; font-size: {time_size}pt; font-weight: 700;"
+        )
+        self.day_lbl.setStyleSheet(
+            f"color: #FFFFFF; font-size: {date_size}pt; font-weight: 700;"
+        )
+        self.sep_lbl.setStyleSheet(
+            f"color: #CCCCCC; font-size: {date_size}pt;"
+        )
+        self.date_lbl.setStyleSheet(
+            f"color: #CCCCCC; font-size: {date_size}pt;"
+        )
 
     def _load_geometry(self):
         x = int(self.settings.get("time_x", 100))
@@ -217,6 +239,10 @@ class ClockWindow(QWidget):
         self.setCursor(Qt.ArrowCursor)
         event.accept()
 
+    def resizeEvent(self, event):  # type: ignore[override]
+        super().resizeEvent(event)
+        self._apply_scaled_styles()
+
 
 class MonitorWindow(QWidget):
     """Main floating performance widget."""
@@ -225,6 +251,7 @@ class MonitorWindow(QWidget):
         super().__init__()
         self.ctrl = app_controller
         self.settings = app_controller.settings
+        self._style_targets = []
         self._drag_offset: Optional[QPoint] = None
         self._is_resizing = False
         self._resize_edge = 0
@@ -251,9 +278,29 @@ class MonitorWindow(QWidget):
 
     def _label(self, text: str, color: str, size: int = 11, bold: bool = False) -> QLabel:
         lbl = QLabel(text)
-        weight = "700" if bold else "400"
-        lbl.setStyleSheet(f"color: {color}; font-size: {size}pt; font-weight: {weight};")
+        lbl.setAttribute(Qt.WA_TransparentForMouseEvents, True)
+        self._style_targets.append((lbl, color, size, bold))
         return lbl
+
+    def _apply_scaled_styles(self):
+        h_scale = min(max(self.height() / 60.0, 0.75), 2.2)
+        w_scale = min(max(self.width() / 250.0, 0.75), 2.2)
+        scale = min(h_scale, w_scale)
+
+        for lbl, color, base_size, bold in self._style_targets:
+            weight = "700" if bold else "400"
+            size = max(8, int(round(base_size * scale)))
+            lbl.setStyleSheet(
+                f"color: {color}; font-size: {size}pt; font-weight: {weight};"
+            )
+
+        width_scale = max(0.75, w_scale)
+        self.dl_speed.setFixedWidth(max(70, int(round(90 * width_scale))))
+        self.ul_speed.setFixedWidth(max(70, int(round(90 * width_scale))))
+        self.cpu_val.setFixedWidth(max(24, int(round(28 * width_scale))))
+        self.ram_val.setFixedWidth(max(24, int(round(28 * width_scale))))
+        self.gpu_val.setFixedWidth(max(24, int(round(28 * width_scale))))
+        self.gpu_temp.setFixedWidth(max(36, int(round(45 * width_scale))))
 
     def _init_ui(self):
         root = QVBoxLayout()
@@ -309,6 +356,7 @@ class MonitorWindow(QWidget):
         root.addLayout(self.row1)
         root.addLayout(self.row2)
         self.setLayout(root)
+        self._apply_scaled_styles()
 
     def _set_text(self, label: QLabel, new_text: str, cache_attr: str):
         if getattr(self, cache_attr) != new_text:
@@ -525,6 +573,10 @@ class MonitorWindow(QWidget):
         self._save_geometry()
         self.setCursor(Qt.ArrowCursor)
         event.accept()
+
+    def resizeEvent(self, event):  # type: ignore[override]
+        super().resizeEvent(event)
+        self._apply_scaled_styles()
 
 
 class PerfMonitorQt:
